@@ -1,5 +1,5 @@
 ---
-title: "Covid-19: Asian X Factor"
+title: "Covid-19: Asian Factor X"
 output:
   pdf_document: default
   html_document: default
