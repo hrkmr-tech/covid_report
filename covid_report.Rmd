@@ -1,0 +1,138 @@
+---
+title: "Covid-19: Asian X Factor"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Purpose of Thie Report
+In my country (an Asian country), it has been rumored that the Asians have a factor preventing the fatality of COVID-19, which is called "Factor X". In this report, I'll show whether the Asians have "Factor X" and the lower number of deaths than others.
+
+Conclusion: there is no obvious "Factor X".
+
+## Importing Libraries
+Importing packages for this project.
+
+You have to manually install the package below before run.
+```
+install.packages("tidyverse")
+install.packages("lubridate")
+```
+
+```{r import_packages, message=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+## Loading Data
+This section is to load the data of COVID-19 from the GitHub repository of the Center for Systems Science and Engineering (CSSE) at Johns Hopkins University. Most of the data sources are from the official institute in each country.
+
+```{r import_data, message=FALSE}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c(
+  "time_series_covid19_confirmed_global.csv",
+  "time_series_covid19_deaths_global.csv"
+)
+urls <- str_c(url_in, file_names)
+
+global_cases <- read_csv(urls[1])
+global_deaths <- read.csv(urls[2])
+```
+
+## Importing and Modifying Data
+Here, I tidy and transform the data: joining case, deaths and population together.
+```{r tidy_transform, message=FALSE}
+tidy_global_deaths <- global_deaths %>%
+  pivot_longer(cols = -c(`Province.State`, `Country.Region`, Lat, Long),
+               names_to = "date",
+               values_to = "deaths") %>%
+  rename(Country_Region = `Country.Region`) %>%
+  mutate(date = mdy(str_replace(date, pattern="X", replacement=""))) %>%
+  select(-c(Lat, Long)) %>%
+  group_by(Country_Region, date) %>%
+  summarise(deaths = sum(deaths))
+
+tidy_global_cases <- global_cases %>%
+  pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long),
+               names_to = "date",
+               values_to = "cases") %>%
+  rename(Country_Region = `Country/Region`) %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long)) %>%
+  group_by(Country_Region, date) %>%
+  summarise(cases = sum(cases))
+
+global <- tidy_global_cases %>%
+  full_join(tidy_global_deaths, by = c("date" = "date","Country_Region" = "Country_Region"))
+
+global
+```
+And this is the summary of joined data.
+```{r summary_data, message=TRUE}
+summary(global)
+```
+
+## Visualizing Data
+### The Number of Global Cases and Deaths in the Logarithmic Scale
+I summed up the number of cases and deaths by date, and showed it as the graph below.
+```{r group_by_date}
+global_by_date <- global %>%
+  group_by(date) %>%
+  summarise_each(funs(sum),
+                 vars = c(cases = cases, deaths = deaths))
+
+global_by_date %>%
+  filter(vars...cases > 0) %>%
+  ggplot(aes(x = date, y = vars...cases)) +
+  geom_line(aes(color = "vars...cases")) +
+  geom_point(aes(color = "vars...cases")) +
+  geom_line(aes(y = vars...deaths, color = "vars...deaths")) +
+  geom_point(aes(y = vars...deaths, color = "vars...deaths")) +
+  scale_y_log10() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Global COVID19", y = NULL)
+```
+### The Proportion of Deaths by Cases in Each Country
+I plotted the deaths by cases in the log scale.
+
+```{r deathes_by_cases}
+latest_date <- global %>%
+  filter(cases > 0) %>%
+  group_by(Country_Region) %>%
+  filter(date == max(date)) %>%
+  ungroup()
+latest_date %>%
+  ggplot(aes(x = cases, y = deaths, label = Country_Region)) +
+  geom_point(aes(color = "")) +
+  scale_y_log10() +
+  scale_x_log10() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Global COVID19")
+```
+
+### Modeling (cases vs deaths)
+I created a model of cases vs deaths. The model looks so good that it is clear that there is no obvious "Factor X". If there were, the dots look more scattered.
+
+```{r modeling}
+mod <- lm(deaths ~ cases, data = latest_date)
+summary(mod)
+```
+
+```{r prediction}
+latest_date_w_pred <- latest_date %>%
+  mutate(pred = predict(mod))
+
+latest_date_w_pred %>%
+  ggplot(aes(cases, deaths)) +
+  geom_point(color = "red") +
+  stat_smooth(method = lm) +
+  scale_y_log10() +
+  scale_x_log10()
+```
+
+### Possible Bias
+But there might be two biases:
+1. the reported number is more likely to be missing if there is more cases and deaths because of insufficient capacity of collecting data
+2. each country uses its own standard of counting, which leads to an unriliable result
